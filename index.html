@@ -20,7 +20,7 @@
           const [error, setError] = useState('');
           const [wishlist, setWishlist] = useState(['', '', '']);
           const [saved, setSaved] = useState(false);
-          const [allWishlists, setAllWishlists] = useState({});
+          const [amigoWishlist, setAmigoWishlist] = useState([]);
           const [spinning, setSpinning] = useState(false);
           const [showResult, setShowResult] = useState(false);
           const [loading, setLoading] = useState(false);
@@ -54,54 +54,49 @@
 
           const deadline = new Date('2025-12-31T23:59:59');
 
-          // Cargar todas las listas de deseos al inicio
-          useEffect(() => {
-            loadAllWishlists();
-          }, []);
-
-          // Cargar la lista del usuario actual cuando cambia
+          // Cargar la lista del usuario cuando se loguea
           useEffect(() => {
             if (currentUser) {
-              loadUserWishlist(currentUser);
+              loadUserData();
             }
           }, [currentUser]);
 
-          const loadAllWishlists = async () => {
+          const loadUserData = async () => {
             try {
               setLoading(true);
-              const wishlists = {};
               
-              // Cargar las listas de todos los participantes
-              for (const name of Object.values(participants)) {
-                try {
-                  const result = await window.storage.get(`wishlist-${name}`, true);
-                  if (result && result.value) {
-                    wishlists[name] = JSON.parse(result.value);
-                  }
-                } catch (err) {
-                  // La lista no existe todavía, es normal
+              // Cargar mi lista de deseos
+              try {
+                const myList = await window.storage.get(`wishlist:${currentUser}`, true);
+                if (myList && myList.value) {
+                  setWishlist(JSON.parse(myList.value));
                 }
-              }
-              
-              setAllWishlists(wishlists);
-            } catch (error) {
-              console.error('Error cargando listas:', error);
-            } finally {
-              setLoading(false);
-            }
-          };
-
-          const loadUserWishlist = async (userName) => {
-            try {
-              const result = await window.storage.get(`wishlist-${userName}`, true);
-              if (result && result.value) {
-                setWishlist(JSON.parse(result.value));
-              } else {
+              } catch (err) {
+                console.log('No hay lista guardada para este usuario');
                 setWishlist(['', '', '']);
               }
+
+              // Cargar la lista de mi amigo secreto
+              const amigoSecreto = assignments[currentUser];
+              if (amigoSecreto) {
+                try {
+                  const amigoList = await window.storage.get(`wishlist:${amigoSecreto}`, true);
+                  if (amigoList && amigoList.value) {
+                    const list = JSON.parse(amigoList.value);
+                    setAmigoWishlist(list.filter(item => item.trim() !== ''));
+                  } else {
+                    setAmigoWishlist([]);
+                  }
+                } catch (err) {
+                  console.log('Mi amigo secreto aún no tiene lista');
+                  setAmigoWishlist([]);
+                }
+              }
             } catch (error) {
-              // No existe lista para este usuario, usar lista vacía
-              setWishlist(['', '', '']);
+              console.error('Error cargando datos:', error);
+              setSaveError('Error al cargar los datos. Por favor recarga la página.');
+            } finally {
+              setLoading(false);
             }
           };
 
@@ -115,7 +110,6 @@
             const newWishlist = [...wishlist];
             newWishlist[index] = value;
             setWishlist(newWishlist);
-            setSaveError(''); // Limpiar error al editar
           };
 
           const removeWishItem = (index) => {
@@ -126,11 +120,6 @@
           };
 
           const saveWishlist = async () => {
-            if (!currentUser) {
-              setSaveError('Usuario no válido');
-              return;
-            }
-
             try {
               setLoading(true);
               setSaveError('');
@@ -140,27 +129,20 @@
               
               // Guardar en almacenamiento compartido
               const result = await window.storage.set(
-                `wishlist-${currentUser}`, 
+                `wishlist:${currentUser}`, 
                 JSON.stringify(itemsToSave),
                 true
               );
               
               if (result) {
-                // Actualizar estado local
-                const updatedWishlists = {
-                  ...allWishlists,
-                  [currentUser]: itemsToSave
-                };
-                setAllWishlists(updatedWishlists);
-                
                 setSaved(true);
-                setTimeout(() => setSaved(false), 2000);
+                setTimeout(() => setSaved(false), 3000);
               } else {
-                setSaveError('No se pudo guardar la lista. Intenta nuevamente.');
+                setSaveError('No se pudo guardar la lista. Intenta de nuevo.');
               }
             } catch (error) {
               console.error('Error guardando lista:', error);
-              setSaveError('Error al guardar. Por favor intenta de nuevo.');
+              setSaveError('Error al guardar: ' + error.message);
             } finally {
               setLoading(false);
             }
@@ -182,6 +164,7 @@
             setCurrentUser(null);
             setAccessCode('');
             setWishlist(['', '', '']);
+            setAmigoWishlist([]);
             setShowResult(false);
             setSaveError('');
           };
@@ -195,9 +178,6 @@
 
           const daysRemaining = getDaysRemaining();
           const amigoSecreto = currentUser ? assignments[currentUser] : null;
-          const amigoWishlist = amigoSecreto && allWishlists[amigoSecreto] 
-            ? allWishlists[amigoSecreto].filter(item => item.trim() !== '')
-            : [];
 
           const GiftIcon = () => (
             <svg className="w-16 h-16 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -239,6 +219,12 @@
           const CheckIcon = () => (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          );
+
+          const RefreshIcon = () => (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           );
 
@@ -307,6 +293,12 @@
                 ) : (
                   <div className="space-y-6">
                     
+                    {loading && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                        <p className="text-blue-800">Cargando información...</p>
+                      </div>
+                    )}
+
                     <div className="bg-white rounded-2xl shadow-xl p-8">
                       <div className="text-center mb-6">
                         <h2 className="text-2xl font-bold text-gray-800 mb-2">
@@ -370,11 +362,20 @@
 
                     {amigoWishlist.length > 0 && (
                       <div className="bg-white rounded-2xl shadow-xl p-8">
-                        <div className="flex items-center gap-2 mb-6">
-                          <HeartIcon />
-                          <h2 className="text-2xl font-bold text-gray-800">
-                            Lista de Deseos de {amigoSecreto}
-                          </h2>
+                        <div className="flex items-center justify-between mb-6">
+                          <div className="flex items-center gap-2">
+                            <HeartIcon />
+                            <h2 className="text-2xl font-bold text-gray-800">
+                              Lista de Deseos de {amigoSecreto}
+                            </h2>
+                          </div>
+                          <button
+                            onClick={loadUserData}
+                            className="p-2 text-gray-500 hover:text-gray-700 transition"
+                            title="Recargar lista"
+                          >
+                            <RefreshIcon />
+                          </button>
                         </div>
 
                         <p className="text-gray-600 mb-6">
@@ -402,18 +403,27 @@
 
                     {amigoWishlist.length === 0 && (
                       <div className="bg-white rounded-2xl shadow-xl p-8">
-                        <div className="flex items-center gap-2 mb-4">
-                          <HeartIcon />
-                          <h2 className="text-2xl font-bold text-gray-800">
-                            Lista de Deseos de {amigoSecreto}
-                          </h2>
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <HeartIcon />
+                            <h2 className="text-2xl font-bold text-gray-800">
+                              Lista de Deseos de {amigoSecreto}
+                            </h2>
+                          </div>
+                          <button
+                            onClick={loadUserData}
+                            className="p-2 text-gray-500 hover:text-gray-700 transition"
+                            title="Recargar lista"
+                          >
+                            <RefreshIcon />
+                          </button>
                         </div>
                         <div className="p-6 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg text-center">
                           <p className="text-gray-500">
                             {amigoSecreto} aún no ha compartido su lista de deseos.
                           </p>
                           <p className="text-sm text-gray-400 mt-2">
-                            Vuelve a consultar más tarde
+                            Presiona el botón de actualizar ↻ para verificar si ya la compartió
                           </p>
                         </div>
                       </div>
@@ -428,6 +438,12 @@
                       <p className="text-gray-600 mb-6">
                         Comparte ideas de regalos que te gustaría recibir. Tu amigo secreto podrá ver esta lista para inspirarse. Recuerda que el presupuesto para el regalo es de $50.000 y ser lo mas detallado posible en cada regalo 😘
                       </p>
+
+                      {saveError && (
+                        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                          <strong>Error:</strong> {saveError}
+                        </div>
+                      )}
 
                       <div className="space-y-3 mb-4">
                         {wishlist.map((item, index) => (
@@ -463,12 +479,6 @@
                         </button>
                       )}
 
-                      {saveError && (
-                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                          {saveError}
-                        </div>
-                      )}
-
                       <button
                         onClick={saveWishlist}
                         disabled={loading}
@@ -483,7 +493,7 @@
                         ) : saved ? (
                           <>
                             <CheckIcon />
-                            ¡Guardado!
+                            ¡Guardado exitosamente!
                           </>
                         ) : (
                           <>
