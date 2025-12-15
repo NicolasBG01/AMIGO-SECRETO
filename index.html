@@ -24,6 +24,7 @@
           const [spinning, setSpinning] = useState(false);
           const [showResult, setShowResult] = useState(false);
           const [loading, setLoading] = useState(false);
+          const [saveError, setSaveError] = useState('');
 
           const participants = {
             'alber12': 'ALBERTO',
@@ -73,13 +74,12 @@
               // Cargar las listas de todos los participantes
               for (const name of Object.values(participants)) {
                 try {
-                  const result = await window.storage.get(`wishlist:${name}`, true);
+                  const result = await window.storage.get(`wishlist-${name}`, true);
                   if (result && result.value) {
                     wishlists[name] = JSON.parse(result.value);
                   }
                 } catch (err) {
-                  // La lista no existe todavía
-                  console.log(`No hay lista para ${name}`);
+                  // La lista no existe todavía, es normal
                 }
               }
               
@@ -93,14 +93,14 @@
 
           const loadUserWishlist = async (userName) => {
             try {
-              const result = await window.storage.get(`wishlist:${userName}`, true);
+              const result = await window.storage.get(`wishlist-${userName}`, true);
               if (result && result.value) {
                 setWishlist(JSON.parse(result.value));
               } else {
                 setWishlist(['', '', '']);
               }
             } catch (error) {
-              // No existe lista para este usuario
+              // No existe lista para este usuario, usar lista vacía
               setWishlist(['', '', '']);
             }
           };
@@ -115,6 +115,7 @@
             const newWishlist = [...wishlist];
             newWishlist[index] = value;
             setWishlist(newWishlist);
+            setSaveError(''); // Limpiar error al editar
           };
 
           const removeWishItem = (index) => {
@@ -125,30 +126,41 @@
           };
 
           const saveWishlist = async () => {
+            if (!currentUser) {
+              setSaveError('Usuario no válido');
+              return;
+            }
+
             try {
               setLoading(true);
+              setSaveError('');
+              
               const validItems = wishlist.filter(item => item.trim() !== '');
               const itemsToSave = validItems.length > 0 ? validItems : [''];
               
               // Guardar en almacenamiento compartido
-              await window.storage.set(
-                `wishlist:${currentUser}`, 
+              const result = await window.storage.set(
+                `wishlist-${currentUser}`, 
                 JSON.stringify(itemsToSave),
-                true // shared = true para que todos puedan verlo
+                true
               );
               
-              // Actualizar estado local
-              const updatedWishlists = {
-                ...allWishlists,
-                [currentUser]: itemsToSave
-              };
-              setAllWishlists(updatedWishlists);
-              
-              setSaved(true);
-              setTimeout(() => setSaved(false), 2000);
+              if (result) {
+                // Actualizar estado local
+                const updatedWishlists = {
+                  ...allWishlists,
+                  [currentUser]: itemsToSave
+                };
+                setAllWishlists(updatedWishlists);
+                
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+              } else {
+                setSaveError('No se pudo guardar la lista. Intenta nuevamente.');
+              }
             } catch (error) {
               console.error('Error guardando lista:', error);
-              setError('Error al guardar la lista. Por favor intenta de nuevo.');
+              setSaveError('Error al guardar. Por favor intenta de nuevo.');
             } finally {
               setLoading(false);
             }
@@ -171,6 +183,7 @@
             setAccessCode('');
             setWishlist(['', '', '']);
             setShowResult(false);
+            setSaveError('');
           };
 
           const getDaysRemaining = () => {
@@ -448,6 +461,12 @@
                         >
                           + Agregar otra idea
                         </button>
+                      )}
+
+                      {saveError && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                          {saveError}
+                        </div>
                       )}
 
                       <button
